@@ -17,6 +17,19 @@ app.use(express.json());
 app.use('/api/auth', authRoutes);
 console.log('Auth routes loaded');
 
+const { authenticate } = require('./middleware/authMiddleware');
+
+// Protected test route
+app.get('/api/me', authenticate, (req, res) => {
+  res.json({ 
+    message: 'You are authenticated',
+    user: req.user 
+  });
+});
+
+const workspaceRoutes = require('./routes/workspaceRoutes');
+app.use('/api/workspaces', workspaceRoutes);
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ 
