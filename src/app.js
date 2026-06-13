@@ -29,6 +29,11 @@ app.get('/api/me', authenticate, (req, res) => {
 
 const workspaceRoutes = require('./routes/workspaceRoutes');
 app.use('/api/workspaces', workspaceRoutes);
+const projectRoutes = require('./routes/projectRoutes');
+const taskRoutes = require('./routes/taskRoutes');
+
+app.use('/api/projects', projectRoutes);
+app.use('/api/tasks', taskRoutes);
 
 // Health check
 app.get('/health', (req, res) => {
