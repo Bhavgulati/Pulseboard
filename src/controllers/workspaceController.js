@@ -151,9 +151,117 @@ const inviteMember = async (req, res) => {
   }
 };
 
+const crypto = require('crypto');
+
+// Generate invite link
+const generateInviteLink = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.userId;
+
+    // Check if requester is admin
+    const adminCheck = await pool.query(
+      `SELECT * FROM workspace_members 
+       WHERE workspace_id = $1 AND user_id = $2 AND role = 'admin'`,
+      [id, userId]
+    );
+
+    if (adminCheck.rows.length === 0) {
+      return res.status(403).json({ error: 'Only admins can generate invite links' });
+    }
+
+    // Generate unique token
+    const inviteToken = crypto.randomBytes(32).toString('hex');
+    
+    // Expires in 7 days
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await pool.query(
+      `UPDATE workspaces 
+       SET invite_token = $1, invite_expires_at = $2
+       WHERE id = $3`,
+      [inviteToken, expiresAt, id]
+    );
+
+    res.json({
+      invite_link: `http://localhost:3000/invite/${inviteToken}`,
+      expires_at: expiresAt,
+      message: 'Share this link with your teammates'
+    });
+
+  } catch (error) {
+    console.error('Generate invite error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// Join via invite link
+const joinViaInviteLink = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const userId = req.user.userId;
+
+    // Find workspace by token
+    const workspace = await pool.query(
+      `SELECT * FROM workspaces 
+       WHERE invite_token = $1 
+       AND invite_expires_at > NOW()`,
+      [token]
+    );
+
+    if (workspace.rows.length === 0) {
+      return res.status(400).json({ 
+        error: 'Invalid or expired invite link' 
+      });
+    }
+
+    const workspaceId = workspace.rows[0].id;
+
+    // Check if already a member
+    const alreadyMember = await pool.query(
+      `SELECT * FROM workspace_members 
+       WHERE workspace_id = $1 AND user_id = $2`,
+      [workspaceId, userId]
+    );
+
+    if (alreadyMember.rows.length > 0) {
+      return res.status(400).json({ 
+        error: 'You are already a member of this workspace' 
+      });
+    }
+
+    // Add as member
+    await pool.query(
+      `INSERT INTO workspace_members (workspace_id, user_id, role)
+       VALUES ($1, $2, 'member')`,
+      [workspaceId, userId]
+    );
+
+    // Notify workspace members via WebSocket
+    const io = req.app.get('io');
+    io.to(`workspace:${workspaceId}`).emit('member_joined', {
+      workspaceId,
+      userId,
+      message: 'A new member joined the workspace'
+    });
+
+    res.json({
+      message: 'Successfully joined workspace',
+      workspace: workspace.rows[0]
+    });
+
+  } catch (error) {
+    console.error('Join workspace error:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
 module.exports = { 
   createWorkspace, 
   getMyWorkspaces, 
   getWorkspace,
-  inviteMember 
+  inviteMember,
+  generateInviteLink,
+  joinViaInviteLink
 };

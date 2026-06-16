@@ -18,6 +18,12 @@ const createTask = async (req, res) => {
       [project_id, title, description, priority || 'medium', assignee_id, due_date, story_points || 1, userId]
     );
 
+        // Emit real-time event to all project members
+    const io = req.app.get('io');
+    io.to(`project:${project_id}`).emit('task_created', {
+        task: result.rows[0]
+    });
+
     res.status(201).json({
       message: 'Task created successfully',
       task: result.rows[0]
@@ -85,6 +91,14 @@ const updateTaskStatus = async (req, res) => {
       return res.status(404).json({ error: 'Task not found' });
     }
 
+    // Emit real-time event — this is the drag and drop update
+    const io = req.app.get('io');
+    io.to(`project:${result.rows[0].project_id}`).emit('task_status_updated', {
+        taskId: id,
+        newStatus: status,
+        task: result.rows[0]
+    });
+
     res.json({
       message: 'Task status updated',
       task: result.rows[0]
@@ -120,6 +134,11 @@ const updateTask = async (req, res) => {
       return res.status(404).json({ error: 'Task not found' });
     }
 
+    const io = req.app.get('io');
+    io.to(`project:${result.rows[0].project_id}`).emit('task_updated', {
+        task: result.rows[0]
+    });
+
     res.json({
       message: 'Task updated',
       task: result.rows[0]
@@ -136,14 +155,30 @@ const deleteTask = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const result = await pool.query(
-      'DELETE FROM tasks WHERE id = $1 RETURNING id',
+    // First get the task to know project_id before deleting
+    const taskResult = await pool.query(
+      'SELECT project_id FROM tasks WHERE id = $1',
       [id]
     );
 
-    if (result.rows.length === 0) {
+    if (taskResult.rows.length === 0) {
       return res.status(404).json({ error: 'Task not found' });
     }
+
+    const projectId = taskResult.rows[0].project_id;
+
+    // Now delete
+    await pool.query(
+      'DELETE FROM tasks WHERE id = $1',
+      [id]
+    );
+
+    // Emit real-time event
+    const io = req.app.get('io');
+    io.to(`project:${projectId}`).emit('task_deleted', {
+      taskId: id,
+      projectId
+    });
 
     res.json({ message: 'Task deleted successfully' });
 
