@@ -1,7 +1,8 @@
+require('dotenv').config();
 const http = require('http');
 const { Server } = require('socket.io');
 const app = require('./app');
-
+require('./queues/notificationWorker');
 const server = http.createServer(app);
 
 const io = new Server(server, {
@@ -21,6 +22,12 @@ io.on('connection', (socket) => {
   socket.on('join_project', (projectId) => {
     socket.join(`project:${projectId}`);
     console.log(`User ${socket.id} joined project:${projectId}`);
+  });
+
+  // Join a task room for comments
+  socket.on('join_task', (taskId) => {
+    socket.join(`task:${taskId}`);
+    console.log(`User ${socket.id} joined task:${taskId}`);
   });
 
   // Join a workspace room

@@ -11,7 +11,6 @@ const {
 } = require('../controllers/workspaceController');
 
 
-
 // All routes protected
 router.use(authenticate);
 

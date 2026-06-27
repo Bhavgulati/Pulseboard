@@ -1,23 +1,43 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
-const pool = require('./config/database');
 const authRoutes = require('./routes/authRoutes');
-
+const workspaceRoutes = require('./routes/workspaceRoutes');
+const projectRoutes = require('./routes/projectRoutes');
+const taskRoutes = require('./routes/taskRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const commentRoutes = require('./routes/commentRoutes');
+const sprintRoutes = require('./routes/sprintRoutes');
+const analyticsRoutes = require('./routes/analyticsRoutes');
+const aiRoutes = require('./routes/aiRoutes');
+const { authenticate } = require('./middleware/authMiddleware');
+const { authLimiter, apiLimiter } = require('./middleware/rateLimiter');
+const webhookRoutes = require('./routes/webhookRoutes');
 const app = express();
 
-// Middleware
+// ✅ MIDDLEWARE ALWAYS FIRST
 app.use(helmet());
 app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
 
-// Routes
-app.use('/api/auth', authRoutes);
-console.log('Auth routes loaded');
+// ✅ RATE LIMITING SECOND
+app.use('/api/auth', authLimiter);
+app.use('/api', apiLimiter);
 
-const { authenticate } = require('./middleware/authMiddleware');
+// ✅ ROUTES ALWAYS LAST
+app.use('/api/auth', authRoutes);
+app.use('/api/workspaces', workspaceRoutes);
+app.use('/api/projects', projectRoutes);
+app.use('/api/tasks', taskRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/comments', commentRoutes);
+app.use('/api/sprints', sprintRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/webhooks', webhookRoutes);
 
 // Protected test route
 app.get('/api/me', authenticate, (req, res) => {
@@ -26,14 +46,6 @@ app.get('/api/me', authenticate, (req, res) => {
     user: req.user 
   });
 });
-
-const workspaceRoutes = require('./routes/workspaceRoutes');
-app.use('/api/workspaces', workspaceRoutes);
-const projectRoutes = require('./routes/projectRoutes');
-const taskRoutes = require('./routes/taskRoutes');
-
-app.use('/api/projects', projectRoutes);
-app.use('/api/tasks', taskRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

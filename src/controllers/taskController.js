@@ -1,4 +1,5 @@
 const pool = require('../config/database');
+const { addNotificationJob } = require('../queues/notificationQueue');
 
 // Create task
 const createTask = async (req, res) => {
@@ -116,6 +117,19 @@ const updateTask = async (req, res) => {
     const { id } = req.params;
     const { title, description, priority, assignee_id, due_date, story_points } = req.body;
 
+    // Get current task BEFORE update to compare old assignee
+    const currentTask = await pool.query(
+      'SELECT * FROM tasks WHERE id = $1',
+      [id]
+    );
+
+    if (currentTask.rows.length === 0) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    const oldAssigneeId = currentTask.rows[0].assignee_id;
+
+    // Now do the update
     const result = await pool.query(
       `UPDATE tasks
        SET title = COALESCE($1, title),
@@ -130,13 +144,21 @@ const updateTask = async (req, res) => {
       [title, description, priority, assignee_id, due_date, story_points, id]
     );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Task not found' });
+    // Fire notification only if assignee CHANGED
+    if (assignee_id && assignee_id !== oldAssigneeId) {
+      await addNotificationJob('task_assigned', {
+        assigneeId: assignee_id,
+        assignerName: req.user.email,
+        taskTitle: result.rows[0].title,
+        taskId: id,
+        projectId: result.rows[0].project_id
+      });
     }
 
+    // Real time update
     const io = req.app.get('io');
     io.to(`project:${result.rows[0].project_id}`).emit('task_updated', {
-        task: result.rows[0]
+      task: result.rows[0]
     });
 
     res.json({
