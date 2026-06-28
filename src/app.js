@@ -55,4 +55,102 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Temporary migration route — remove after first deploy
+app.get('/run-migrations', async (req, res) => {
+  const secret = req.query.secret;
+  if (secret !== 'pulseboard_migrate_2026') {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const pool = require('./config/database');
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        role VARCHAR(20) DEFAULT 'member',
+        avatar_url VARCHAR(500),
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS workspaces (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        owner_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        invite_token VARCHAR(100) UNIQUE,
+        invite_expires_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS workspace_members (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        role VARCHAR(20) DEFAULT 'member',
+        joined_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(workspace_id, user_id)
+      );
+      CREATE TABLE IF NOT EXISTS projects (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        workspace_id UUID REFERENCES workspaces(id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        status VARCHAR(20) DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS sprints (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+        name VARCHAR(100) NOT NULL,
+        goal TEXT,
+        status VARCHAR(20) DEFAULT 'planning',
+        start_date TIMESTAMP,
+        end_date TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS tasks (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+        sprint_id UUID REFERENCES sprints(id) ON DELETE SET NULL,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        status VARCHAR(20) DEFAULT 'todo',
+        priority VARCHAR(20) DEFAULT 'medium',
+        assignee_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        due_date TIMESTAMP,
+        story_points INTEGER DEFAULT 1,
+        created_by UUID REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS comments (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        task_id UUID REFERENCES tasks(id) ON DELETE CASCADE,
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        edited BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS notifications (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        type VARCHAR(50) NOT NULL,
+        title VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        data JSONB,
+        read BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+    res.json({ message: '✅ All tables created successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = app;
